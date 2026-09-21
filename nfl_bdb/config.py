@@ -29,9 +29,9 @@ class Config:
     EDGE_IN_DIM: int = 7
 
     # ---------------- Dataset split ----------------
-    N_TRAIN: int = 3000
-    N_VAL: int = 500
-    N_TEST: int = 500
+    N_TRAIN: int = 300
+    N_VAL: int = 50
+    N_TEST: int = 50
     N_LENGTH_BINS: int = 15
 
     # ---------------- Training ----------------
