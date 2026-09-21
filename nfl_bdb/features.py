@@ -457,7 +457,7 @@ def preprocess_aux(df):
     # ---- Final dataframe ----
     final_df = pd.concat(
         [keys,
-         df[["offense_score", "defense_score", "yards_to_go_norm", "expected_points", "expected_points_added", "defenders_in_the_box"]],
+         df[["offense_score", "defense_score", "game_clock_norm", "yards_to_go_norm", "expected_points", "expected_points_added", "defenders_in_the_box"]],
          df_ohe],
         axis=1
     )
