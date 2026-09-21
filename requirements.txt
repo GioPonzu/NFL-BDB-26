@@ -1,0 +1,13 @@
+# Versions are not pinned: Colab provides torch, numpy, pandas, scipy, scikit-learn and matplotlib.
+# torch_geometric is installed by the first cell of the notebook (pip install torch_geometric).
+torch
+torch_geometric
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+tqdm
+jinja2          # styled comparison table
+kagglehub       # download of the competition files
