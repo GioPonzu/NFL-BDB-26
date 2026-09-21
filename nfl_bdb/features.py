@@ -237,7 +237,7 @@ def preprocess_play(data, game_id, play_id):
     play_df.columns = [col.replace(" ", "_") for col in play_df.columns]
 
     # Merge physical attributes once
-    physical_df = data.preprocessed_players_df.reset_index()
+    physical_df = data.preprocessed_players_df.drop(["player_age","player_height_m","player_weight_kg","player_BMI"]axis=1).reset_index()
     play_df = play_df.merge(physical_df, on="nfl_id", how="left")
 
     # Drop useless columns once
