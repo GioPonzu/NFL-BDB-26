@@ -25,7 +25,7 @@ class Config:
 
     # ---------------- Model ----------------
     HIDDEN_DIM: int = 128
-    NODE_IN_DIM: int = 40
+    NODE_IN_DIM: int = 36
     EDGE_IN_DIM: int = 7
 
     # ---------------- Dataset split ----------------
