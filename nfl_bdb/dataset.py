@@ -32,7 +32,7 @@ def compute_play_lengths(data, cfg):
         .max()
         .rename("num_output_frames")
     )
-
+    print("è CAMBIATO")
     play_lengths = pd.concat([input_len_per_play, output_len_per_play], axis=1).dropna()
     play_lengths["num_output_frames"] = play_lengths["num_output_frames"].astype(int)
 
