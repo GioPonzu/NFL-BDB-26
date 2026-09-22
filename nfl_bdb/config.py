@@ -27,6 +27,8 @@ class Config:
     HIDDEN_DIM: int = 128
     NODE_IN_DIM: int = 36
     EDGE_IN_DIM: int = 7
+    GAT_NUM_LAYERS: int = 1              # message-passing layers stacked in each GAT branch (spatial, temporal)
+    REGRESSOR_HIDDEN_DIM: int = 512      # width of the hidden layer of the final per-player regressor
 
     # ---------------- Dataset split ----------------
     N_TRAIN: int = 300
