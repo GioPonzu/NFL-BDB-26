@@ -2,14 +2,16 @@
 procedure `run_training`, and `ExperimentRunner`, the single entry point for the baseline and for every ablation.
 
 The model and the loss are contributions of the notebook and are injected:
-    model_factory(global_in_dim, hidden_dim) -> nn.Module
+    model_factory(global_in_dim, hidden_dim, gat_num_layers, regressor_hidden_dim) -> nn.Module
     loss_fn(y_pred, y_true, output_mask), metric_fn(y_pred, y_true, output_mask) -> scalar tensor
 """
 import gc
 import json
+import shutil
 import time
 from pathlib import Path
 
+import pandas as pd
 import torch
 from tqdm.auto import tqdm
 
@@ -123,11 +125,12 @@ class EarlyStopping:
 
 # ---------------------------------------------------------------- Single training procedure
 def run_training(gnn_train_list, gnn_val_list, gnn_test_list, global_in_dim, run_label, model_factory,
-                 loss_fn, metric_fn, cfg, device, hidden_dim=None, num_epochs=None, verbose=True, keep_model=False,
-                 progress=False):
+                 loss_fn, metric_fn, cfg, device, hidden_dim=None, gat_num_layers=None, regressor_hidden_dim=None,
+                 num_epochs=None, verbose=True, keep_model=False, progress=False):
     """The ONE training procedure, called with different configurations instead of copying the loop: the baseline and
     every ablation use it. Training/scheduler/early-stopping hyperparameters come from `cfg`; only what is being tested
-    changes (batch lists, `global_in_dim`, `hidden_dim`), in line with the one-factor-at-a-time principle.
+    changes (batch lists, `global_in_dim`, `hidden_dim`, `gat_num_layers`, `regressor_hidden_dim`), in line with the
+    one-factor-at-a-time principle.
 
     The seed is fixed again at every call: without it, the differences between runs would be confounded with the
     variance of the random weight initialization, not only with the factor under test.
@@ -137,6 +140,8 @@ def run_training(gnn_train_list, gnn_val_list, gnn_test_list, global_in_dim, run
     accumulate RAM/VRAM.
     """
     hidden_dim = hidden_dim or cfg.HIDDEN_DIM
+    gat_num_layers = gat_num_layers or cfg.GAT_NUM_LAYERS
+    regressor_hidden_dim = regressor_hidden_dim or cfg.REGRESSOR_HIDDEN_DIM
     num_epochs = num_epochs or cfg.NUM_EPOCHS
     fix_random(seed=cfg.RANDOM_SEED)
 
@@ -144,7 +149,7 @@ def run_training(gnn_train_list, gnn_val_list, gnn_test_list, global_in_dim, run
     checkpoint_path = Path(cfg.OUTPUT_DIR) / f"best_model_{run_label}.pt"
     t0 = time.time()
 
-    model = model_factory(global_in_dim, hidden_dim).to(device)
+    model = model_factory(global_in_dim, hidden_dim, gat_num_layers, regressor_hidden_dim).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.LEARNING_RATE)
     # ReduceLROnPlateau with a cooldown: without it a reduction could trigger another one right away, before the
     # model had time to benefit from the new LR. min_lr keeps the LR from collapsing to useless values.
@@ -202,9 +207,19 @@ def run_training(gnn_train_list, gnn_val_list, gnn_test_list, global_in_dim, run
                                                 progress=progress)
     elapsed_min = (time.time() - t0) / 60
 
+    # Persist a copy of the best checkpoint outside OUTPUT_DIR (gitignored, ephemeral Colab scratch): every run's
+    # weights land here too, not just the ones you end up choosing, so nothing has to be retrained later just to
+    # get its .pt file back.
+    if cfg.WEIGHTS_DIR:
+        weights_dir = Path(cfg.WEIGHTS_DIR)
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(checkpoint_path, weights_dir / checkpoint_path.name)
+
     result = {
         "run_label": run_label,
         "hidden_dim": hidden_dim,
+        "gat_num_layers": gat_num_layers,
+        "regressor_hidden_dim": regressor_hidden_dim,
         "global_in_dim": global_in_dim,
         "actual_epochs": len(train_loss_history),
         "best_val_loss": best_val_loss,
@@ -256,8 +271,8 @@ class ExperimentRunner:
 
     # ---- labels and bookkeeping
     @staticmethod
-    def make_label(batch_size, hidden_dim, global_mode):
-        return f"bs{batch_size}_hd{hidden_dim}_{global_mode}"
+    def make_label(batch_size, hidden_dim, global_mode, gat_num_layers, regressor_hidden_dim):
+        return f"bs{batch_size}_hd{hidden_dim}_gl{gat_num_layers}_rg{regressor_hidden_dim}_{global_mode}"
 
     def get_result(self, label):
         return next((r for r in self.results if r["run_label"] == label), None)
@@ -280,11 +295,15 @@ class ExperimentRunner:
         return self.results
 
     # ---- one run
-    def run(self, batch_size=None, global_mode="all", hidden_dim=None, num_epochs=None, run_label=None,
+    def run(self, batch_size=None, global_mode="all", hidden_dim=None, gat_num_layers=None,
+            regressor_hidden_dim=None, num_epochs=None, run_label=None,
             verbose=True, keep_model=False, progress=False):
         batch_size = batch_size or self.cfg.BATCH_SIZE
         hidden_dim = hidden_dim or self.cfg.HIDDEN_DIM
-        label = run_label or self.make_label(batch_size, hidden_dim, global_mode)
+        gat_num_layers = gat_num_layers or self.cfg.GAT_NUM_LAYERS
+        regressor_hidden_dim = regressor_hidden_dim or self.cfg.REGRESSOR_HIDDEN_DIM
+        label = run_label or self.make_label(batch_size, hidden_dim, global_mode, gat_num_layers,
+                                             regressor_hidden_dim)
 
         done = self.get_result(label)
         if done is not None and not keep_model:
@@ -297,7 +316,7 @@ class ExperimentRunner:
             # Finished in a previous session: rebuild the model from its checkpoint instead of retraining
             ckpt = Path(self.cfg.OUTPUT_DIR) / f"best_model_{label}.pt"
             if ckpt.exists():
-                model = self.model_factory(g_dim, hidden_dim).to(self.device)
+                model = self.model_factory(g_dim, hidden_dim, gat_num_layers, regressor_hidden_dim).to(self.device)
                 model.load_state_dict(torch.load(ckpt, map_location=self.device))
                 model.eval()
                 print(f"[{label}] already done, model reloaded from {ckpt}")
@@ -305,7 +324,8 @@ class ExperimentRunner:
 
         res = run_training(tr_list, va_list, te_list, global_in_dim=g_dim, run_label=label,
                            model_factory=self.model_factory, loss_fn=self.loss_fn, metric_fn=self.metric_fn,
-                           cfg=self.cfg, device=self.device, hidden_dim=hidden_dim, num_epochs=num_epochs,
+                           cfg=self.cfg, device=self.device, hidden_dim=hidden_dim, gat_num_layers=gat_num_layers,
+                           regressor_hidden_dim=regressor_hidden_dim, num_epochs=num_epochs,
                            verbose=verbose, keep_model=keep_model, progress=progress)
         res["batch_size"] = batch_size
         res["global_mode"] = global_mode
@@ -315,3 +335,23 @@ class ExperimentRunner:
         if self.results_path:
             self.save_results()
         return res
+
+
+# ---------------------------------------------------------------- Sequential (greedy) search
+def run_stage(runner, baseline, axis, grid, verbose=False):
+    """One stage of a SEQUENTIAL/greedy search, as opposed to a one-factor-at-a-time ablation against one fixed
+    baseline: runs `axis` over `grid` with every other factor fixed at `baseline`'s CURRENT value (which is
+    expected to already carry the winners of whatever stages ran before this one), and prints a comparison table
+    (validation/test RMSE, epochs actually trained, training time) for you to read.
+
+    It does NOT pick a winner itself -- test RMSE alone does not capture training time or resource cost, and that
+    trade-off is a judgment call. After reading the table, set `BASELINE["<axis>"] = <the value you pick>` yourself
+    (a plain dict assignment) before moving to the next stage; nothing here does that for you.
+    """
+    results = [runner.run(**{**baseline, axis: v}, verbose=verbose) for v in grid]
+    table = pd.DataFrame([{
+        axis: r[axis], "val RMSE": r["best_val_metric"], "test RMSE": r["test_metric"],
+        "epochs": r["actual_epochs"], "minutes": r["elapsed_min"],
+    } for r in results])
+    print(table.to_string(index=False))
+    return table

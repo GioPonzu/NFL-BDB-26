@@ -57,7 +57,9 @@ class Config:
 
     # ---------------- Bookkeeping ----------------
     RANDOM_SEED: int = 42
-    OUTPUT_DIR: Path = Path("outputs")   # checkpoints and results of the runs
+    OUTPUT_DIR: Path = Path("outputs")   # checkpoints and results of the runs (gitignored: ephemeral Colab scratch)
+    WEIGHTS_DIR: Optional[Path] = Path("weights")   # every run's best checkpoint is ALSO copied here (persisted in
+                                                     # the repo, unlike OUTPUT_DIR); set to None to disable
 
     @property
     def N_TOTAL(self) -> int:

@@ -2,8 +2,9 @@
 diagnostics of the global-feature branch.
 
 `results` is the list of dicts kept by `ExperimentRunner` (or read back from its json). The BASELINE is the run every
-ablation is compared with: `dict(batch_size=..., hidden_dim=..., global_mode=...)`. Each ablation varies ONE of the
-three factors and keeps the other two at their baseline value.
+ablation is compared with: `dict(batch_size=..., hidden_dim=..., global_mode=..., gat_num_layers=...,
+regressor_hidden_dim=...)`. Each ablation varies ONE of the five factors and keeps the other four at their baseline
+value.
 """
 import json
 
@@ -17,6 +18,8 @@ STUDIES = {
     "batch_size": ("batch_size", "Batch size", "batch size"),
     "hidden_dim": ("hidden_dim", "Hidden dimension", "hidden dimension"),
     "global_mode": ("global_mode", "Global features", "global features"),
+    "gat_num_layers": ("gat_num_layers", "GAT layers", "GAT layers"),
+    "regressor_hidden_dim": ("regressor_hidden_dim", "Regressor width", "regressor hidden dim"),
 }
 GLOBAL_MODE_ORDER = ["none", "no_outcome", "all"]
 GLOBAL_MODE_NAMES = {"none": "none", "no_outcome": "no outcome", "all": "all"}
@@ -30,15 +33,19 @@ def load_results(path):
 
 
 def results_frame(results, baseline):
-    """One row per run. Runs saved before `hidden_dim` existed are assumed to use the baseline hidden dimension."""
+    """One row per run. Runs saved before a column existed (e.g. `hidden_dim` in older results, or `gat_num_layers` /
+    `regressor_hidden_dim` before they became ablation axes) are assumed to use the baseline value of that column."""
     df = pd.DataFrame(results)
-    if "hidden_dim" not in df.columns:
-        df["hidden_dim"] = baseline["hidden_dim"]
-    df["hidden_dim"] = df["hidden_dim"].fillna(baseline["hidden_dim"]).astype(int)
+    for col in ("hidden_dim", "gat_num_layers", "regressor_hidden_dim"):
+        if col not in df.columns:
+            df[col] = baseline[col]
+        df[col] = df[col].fillna(baseline[col]).astype(int)
     df["is_baseline"] = (
         (df["batch_size"] == baseline["batch_size"])
         & (df["hidden_dim"] == baseline["hidden_dim"])
         & (df["global_mode"] == baseline["global_mode"])
+        & (df["gat_num_layers"] == baseline["gat_num_layers"])
+        & (df["regressor_hidden_dim"] == baseline["regressor_hidden_dim"])
     )
     return df
 
@@ -107,7 +114,8 @@ def print_takeaways(results, baseline):
         return
     base_test = float(base["test_metric"].iloc[0])
     print(f"Baseline (batch size {baseline['batch_size']}, hidden dim {baseline['hidden_dim']}, "
-          f"global features '{baseline['global_mode']}'): test RMSE {base_test:.3f} yards\n")
+          f"global features '{baseline['global_mode']}', {baseline['gat_num_layers']} GAT layer(s), "
+          f"regressor width {baseline['regressor_hidden_dim']}): test RMSE {base_test:.3f} yards\n")
     for axis, (col, title, _) in STUDIES.items():
         sub = study_subset(df, axis, baseline)
         if len(sub) < 2:
