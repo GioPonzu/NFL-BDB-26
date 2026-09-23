@@ -313,8 +313,17 @@ class ExperimentRunner:
         tr_list, va_list, te_list, g_dim = self.batches.get(batch_size, global_mode)
 
         if done is not None and keep_model:
-            # Finished in a previous session: rebuild the model from its checkpoint instead of retraining
+            # Finished in a previous session: rebuild the model from its checkpoint instead of retraining. Looked
+            # for first in OUTPUT_DIR (where run_training originally saves it), then -- if not there -- in
+            # WEIGHTS_DIR (where every run's checkpoint is ALSO mirrored, and the only one of the two meant to
+            # persist / be committed to the repo): this way reloading works whether you brought along OUTPUT_DIR,
+            # WEIGHTS_DIR, or both, as long as `experiment_results.json` and the matching `.pt` are both present
+            # somewhere reachable.
             ckpt = Path(self.cfg.OUTPUT_DIR) / f"best_model_{label}.pt"
+            if not ckpt.exists() and self.cfg.WEIGHTS_DIR:
+                alt = Path(self.cfg.WEIGHTS_DIR) / f"best_model_{label}.pt"
+                if alt.exists():
+                    ckpt = alt
             if ckpt.exists():
                 model = self.model_factory(g_dim, hidden_dim, gat_num_layers, regressor_hidden_dim).to(self.device)
                 model.load_state_dict(torch.load(ckpt, map_location=self.device))
