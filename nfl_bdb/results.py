@@ -29,13 +29,18 @@ import numpy as np
 import pandas as pd
 import torch
 
-# axis -> (column, title of the study, x-axis label)
+# axis -> (column, title of the study, x-axis label), in the order the sequential search actually ran them:
+# global features, then batch size, then hidden dimension, then regressor width, then GAT layers -- each stage's
+# runs were made with every earlier stage's winner already fixed, regressor width included, so the GAT-layers
+# study is read with the regressor width already resolved, not the other way around. This order only controls
+# display (panel order in plot_ablations, row order in summary_table); local_baseline's auto-detection groups by
+# the OTHER four columns regardless of dict order, so it isn't affected by this ordering.
 STUDIES = {
+    "global_mode": ("global_mode", "Global features", "global features"),
     "batch_size": ("batch_size", "Batch size", "batch size"),
     "hidden_dim": ("hidden_dim", "Hidden dimension", "hidden dimension"),
-    "global_mode": ("global_mode", "Global features", "global features"),
-    "gat_num_layers": ("gat_num_layers", "GAT layers", "GAT layers"),
     "regressor_hidden_dim": ("regressor_hidden_dim", "Regressor width", "regressor hidden dim"),
+    "gat_num_layers": ("gat_num_layers", "GAT layers", "GAT layers"),
 }
 GLOBAL_MODE_ORDER = ["none", "no_outcome", "all"]
 GLOBAL_MODE_NAMES = {"none": "none", "no_outcome": "no outcome", "all": "all"}
@@ -178,7 +183,11 @@ def disambiguate_labels(sub, axis):
 def summary_table(results, baseline=None):
     """Table of all the configurations: study, value, validation and test RMSE (yards), difference from either the
     given `baseline` or (if none given) the best run of that same study, epochs actually trained, training time and
-    source. A study with fewer than one point (never run) is skipped."""
+    source. A study with fewer than one point (never run) is skipped.
+
+    The row index is the configuration's own ablation value (e.g. "64", "all (baseline)") rather than a bare
+    0, 1, 2, ... -- so the value being compared is legible even if this DataFrame is displayed directly (not just
+    through `show_summary_table`, whose styled path already hides the index)."""
     df = results_frame(results, baseline)
     delta_col = "vs baseline" if baseline is not None else "vs best (this study)"
     base_test = None
@@ -203,7 +212,10 @@ def summary_table(results, baseline=None):
                 "epochs": int(r["actual_epochs"]),
                 "minutes": r["elapsed_min"],
             })
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out.index = pd.Index(out["configuration"], name=None)   # the ablation value itself, not 0, 1, 2, ...
+    return out
 
 
 def show_summary_table(results, baseline=None):
@@ -283,8 +295,15 @@ def plot_ablations(results, baseline=None, suptitle=None):
     else:
         outline = lambda r: bool(r["is_baseline"])
 
-    fig, axes = plt.subplots(1, len(axes_present), figsize=(5.6 * len(axes_present), 4.8), sharey=True)
-    axes = np.atleast_1d(axes)
+    # A grid (at most 3 per row) instead of one ever-wider row: with 5 studies, a single row of 5 panels squeezes
+    # each one down to where labels and value annotations start to overlap. Unused slots in the last row are hidden.
+    n = len(axes_present)
+    ncols = min(3, n)
+    nrows = -(-n // ncols)  # ceil
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.8 * ncols, 4.6 * nrows), sharey=True)
+    axes = np.atleast_1d(axes).ravel()
+    for extra_ax in axes[n:]:
+        extra_ax.axis("off")
 
     non_empty = [s for _, s in axes_present if not s.empty]
     if non_empty:
@@ -321,7 +340,13 @@ def plot_ablations(results, baseline=None, suptitle=None):
         ax.set_axisbelow(True)
         ax.spines[["top", "right"]].set_visible(False)
 
-    axes[0].set_ylabel("RMSE (yards)")
+    # sharey means every panel already has the same scale; only the leftmost column needs the tick labels and
+    # axis title repeated, which is what actually made the row feel condensed with 5+ panels.
+    for i, ax in enumerate(axes[:n]):
+        if i % ncols == 0:
+            ax.set_ylabel("RMSE (yards)")
+        else:
+            ax.tick_params(axis="y", labelleft=False)
     axes[0].set_ylim(max(0, lo - pad), hi + pad)
     handles, labels_ = axes[0].get_legend_handles_labels()
     handles.append(plt.Rectangle((0, 0), 1, 1, fill=False, edgecolor=BASELINE_COLOR, linestyle="--"))
