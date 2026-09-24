@@ -185,9 +185,11 @@ def summary_table(results, baseline=None):
     given `baseline` or (if none given) the best run of that same study, epochs actually trained, training time and
     source. A study with fewer than one point (never run) is skipped.
 
-    The row index is the configuration's own ablation value (e.g. "64", "all (baseline)") rather than a bare
+    The row index is "study: value" (e.g. "Batch size: 64", "Global features: all (baseline)") rather than a bare
     0, 1, 2, ... -- so the value being compared is legible even if this DataFrame is displayed directly (not just
-    through `show_summary_table`, whose styled path already hides the index)."""
+    through `show_summary_table`, whose styled path already hides the index). The study name is part of the index,
+    not just the value, because the same value (e.g. "64") recurs across different studies -- a bare value would
+    make the index non-unique, which `Styler.apply`/`.map` (used by `show_summary_table`) refuses outright."""
     df = results_frame(results, baseline)
     delta_col = "vs baseline" if baseline is not None else "vs best (this study)"
     base_test = None
@@ -214,7 +216,7 @@ def summary_table(results, baseline=None):
             })
     out = pd.DataFrame(rows)
     if not out.empty:
-        out.index = pd.Index(out["configuration"], name=None)   # the ablation value itself, not 0, 1, 2, ...
+        out.index = pd.Index(out["study"] + ": " + out["configuration"], name=None)
     return out
 
 
