@@ -42,8 +42,8 @@ STUDIES = {
     "regressor_hidden_dim": ("regressor_hidden_dim", "Regressor width", "regressor hidden dim"),
     "gat_num_layers": ("gat_num_layers", "GAT layers", "GAT layers"),
 }
-GLOBAL_MODE_ORDER = ["none", "no_outcome", "all"]
-GLOBAL_MODE_NAMES = {"none": "none", "no_outcome": "no outcome", "all": "all"}
+GLOBAL_MODE_ORDER = ["none", "all"]
+GLOBAL_MODE_NAMES = {"none": "none", "all": "all"}
 VAL_COLOR, TEST_COLOR, BASELINE_COLOR = "tab:blue", "tab:orange", "black"
 
 
@@ -207,7 +207,7 @@ def summary_table(results, baseline=None):
             rows.append({
                 "study": title,
                 "configuration": label + (" (baseline)" if r["is_baseline"] else ""),
-                "source": r["source"],
+                #"source": r["source"],
                 "val RMSE": r["best_val_metric"],
                 "test RMSE": r["test_metric"],
                 delta_col: r["test_metric"] - ref_test,
