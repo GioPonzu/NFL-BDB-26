@@ -34,16 +34,32 @@ import torch
 # runs were made with every earlier stage's winner already fixed, regressor width included, so the GAT-layers
 # study is read with the regressor width already resolved, not the other way around. This order only controls
 # display (panel order in plot_ablations, row order in summary_table); local_baseline's auto-detection groups by
-# the OTHER four columns regardless of dict order, so it isn't affected by this ordering.
+# the OTHER columns (all of STUDIES except the one axis in question) regardless of dict order, so it isn't
+# affected by this ordering, and it isn't affected by adding a new axis either.
+#
+# "n_total" is NOT a stage of Chapter 10's sequential search -- it's Chapter 12's sampled-pool-size checks
+# (12.1/12.2), which retrain one fixed configuration on bigger data instead of varying a model hyperparameter.
+# It is tracked here as a sixth axis anyway, for one specific reason: without it, those checks are otherwise
+# indistinguishable, on every OTHER axis, from the pre-tuning starting-point configuration already in the table
+# (batch_size=1, hidden_dim=64, global_mode="all", gat_num_layers=1, regressor_hidden_dim=256) -- so
+# local_baseline's auto-grouping would silently fold them into the batch_size/hidden_dim/regressor_width/
+# gat_num_layers panels as fake extra points of an unrelated study. Giving "sampled pool size" its own axis (a)
+# gives it its own clean panel and (b) makes it part of "the other columns held fixed" for every other study,
+# which is what correctly excludes these rows from those studies' groupings.
 STUDIES = {
     "global_mode": ("global_mode", "Global features", "global features"),
     "batch_size": ("batch_size", "Batch size", "batch size"),
     "hidden_dim": ("hidden_dim", "Hidden dimension", "hidden dimension"),
     "regressor_hidden_dim": ("regressor_hidden_dim", "Regressor width", "regressor hidden dim"),
     "gat_num_layers": ("gat_num_layers", "GAT layers", "GAT layers"),
+    "n_total": ("n_total", "Sampled pool size", "sampled pool size"),
 }
 GLOBAL_MODE_ORDER = ["none", "all"]
 GLOBAL_MODE_NAMES = {"none": "none", "all": "all"}
+# N_TRAIN+N_VAL+N_TEST (3000/1000/1000) used throughout Chapters 9-10, before "n_total" existed as a stored
+# field -- results_frame() fills it in with this for any run saved before that field was added, so old rows in
+# experiment_results.json don't need to be touched by hand.
+DEFAULT_N_TOTAL = 5000
 VAL_COLOR, TEST_COLOR, BASELINE_COLOR = "tab:blue", "tab:orange", "black"
 
 
@@ -104,6 +120,14 @@ def results_frame(results, baseline=None):
         if not df[col].isna().any():
             df[col] = df[col].astype(int)
 
+    # "n_total" (sampled pool size) only exists on runs saved after Chapter 12's split-size checks were added --
+    # every run before that (the whole Chapter 10 sequential search) trained on N_TRAIN+N_VAL+N_TEST=5000, so
+    # that's the correct backfill, not NaN or the baseline dict (which doesn't carry this field).
+    if "n_total" not in df.columns:
+        df["n_total"] = DEFAULT_N_TOTAL
+    else:
+        df["n_total"] = df["n_total"].fillna(DEFAULT_N_TOTAL).astype(int)
+
     df["dup"] = df["run_label"].duplicated(keep=False) if "run_label" in df.columns else False
 
     if baseline is not None:
@@ -113,6 +137,10 @@ def results_frame(results, baseline=None):
             & (df["global_mode"] == baseline["global_mode"])
             & (df["gat_num_layers"] == baseline["gat_num_layers"])
             & (df["regressor_hidden_dim"] == baseline["regressor_hidden_dim"])
+            # BASELINE (the hyperparameter dict) doesn't carry a pool-size field, since it predates Chapter 12 --
+            # default it to DEFAULT_N_TOTAL so "the baseline run" still means the one true final model (trained
+            # at the standard 5k pool), not also any future rerun of it at a bigger sampled pool.
+            & (df["n_total"] == baseline.get("n_total", DEFAULT_N_TOTAL))
         )
     else:
         df["is_baseline"] = False
@@ -121,10 +149,11 @@ def results_frame(results, baseline=None):
 
 def local_baseline(df, axis):
     """Auto-detects the configuration that was actually held fixed while `axis` was varied, directly from the
-    data: groups the runs by their other four hyperparameters, and returns the values of the group where `axis`
-    takes more than one distinct value, preferring the group with the most runs (ties broken by total epochs
-    trained, then by the group encountered first). Returns None if `axis` was never varied in `results` (that
-    study hasn't run yet). This is what `study_subset`/the plotting functions fall back to when `baseline=None`.
+    data: groups the runs by every OTHER column in STUDIES (five of them, currently), and returns the values of
+    the group where `axis` takes more than one distinct value, preferring the group with the most runs (ties
+    broken by total epochs trained, then by the group encountered first). Returns None if `axis` was never varied
+    in `results` (that study hasn't run yet). This is what `study_subset`/the plotting functions fall back to
+    when `baseline=None`.
     """
     other_cols = [STUDIES[a][0] for a in STUDIES if a != axis]
     col = STUDIES[axis][0]
@@ -142,12 +171,17 @@ def local_baseline(df, axis):
 
 
 def study_subset(df, axis, baseline=None):
-    """Runs of one ablation: `axis` varies, the other four factors are held at `baseline`'s value if given, or at
+    """Runs of one ablation: `axis` varies, the other five factors are held at `baseline`'s value if given, or at
     the auto-detected `local_baseline` otherwise (so the baseline run, when there is one, belongs to every study it
     is part of)."""
     fixed = baseline if baseline is not None else local_baseline(df, axis)
     if fixed is None:
         return df.iloc[0:0]
+    if baseline is not None and "n_total" not in fixed:
+        # Same reasoning as is_baseline above: an explicit baseline dict predates pool-size tracking, so treat it
+        # as implicitly pinned to the standard 5k pool unless the caller says otherwise -- otherwise a future
+        # bigger-pool rerun of the exact tuned baseline would leak into every OTHER study's panel too.
+        fixed = {**fixed, "n_total": DEFAULT_N_TOTAL}
     keep = pd.Series(True, index=df.index)
     for other, (col, _, _) in STUDIES.items():
         if other != axis and col in fixed:
@@ -161,7 +195,14 @@ def study_subset(df, axis, baseline=None):
 
 
 def config_label(value, axis):
-    return GLOBAL_MODE_NAMES.get(value, value) if axis == "global_mode" else str(value)
+    if axis == "global_mode":
+        return GLOBAL_MODE_NAMES.get(value, value)
+    if axis == "n_total":
+        # 5000/10000/14000 -> "5k"/"10k"/"14k"; g-format drops a trailing ".0" for exact thousands but still
+        # shows one decimal for anything that isn't (e.g. a future 12500 -> "12.5k"), so this doesn't silently
+        # mislabel an odd value if one is ever added.
+        return f"{value / 1000:g}k"
+    return str(value)
 
 
 def disambiguate_labels(sub, axis):
@@ -297,7 +338,7 @@ def plot_ablations(results, baseline=None, suptitle=None):
     else:
         outline = lambda r: bool(r["is_baseline"])
 
-    # A grid (at most 3 per row) instead of one ever-wider row: with 5 studies, a single row of 5 panels squeezes
+    # A grid (at most 3 per row) instead of one ever-wider row: with 6 studies, a single row of 6 panels squeezes
     # each one down to where labels and value annotations start to overlap. Unused slots in the last row are hidden.
     n = len(axes_present)
     ncols = min(3, n)
