@@ -24,6 +24,7 @@ when it is actually duplicated, so single runs stay uncluttered.
 import json
 from pathlib import Path
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -61,6 +62,17 @@ GLOBAL_MODE_NAMES = {"none": "none", "all": "all"}
 # experiment_results.json don't need to be touched by hand.
 DEFAULT_N_TOTAL = 5000
 VAL_COLOR, TEST_COLOR, BASELINE_COLOR = "tab:blue", "tab:orange", "black"
+
+
+def _darken(color, factor=0.6):
+    """A darker shade of `color` (each RGB channel scaled towards black by `factor`) -- used to mark the best
+    configuration of a study directly on its bar, in `plot_ablations`, instead of a separate outline/legend
+    mechanism."""
+    r, g, b = mcolors.to_rgb(color)
+    return (r * factor, g * factor, b * factor)
+
+
+VAL_COLOR_BEST, TEST_COLOR_BEST = _darken(VAL_COLOR), _darken(TEST_COLOR)
 
 
 # ---------------------------------------------------------------- Loading (one or several result files)
@@ -278,65 +290,17 @@ def show_summary_table(results, baseline=None):
         return table.round(3)
 
 
-def print_takeaways(results, baseline=None):
-    """One sentence per study: the best configuration on the TEST RMSE and its difference from the baseline (if
-    given) or from the best run of that study (if not)."""
-    df = results_frame(results, baseline)
-    base_test = None
-    if baseline is not None:
-        base = df[df["is_baseline"]]
-        if base.empty:
-            print("The baseline run is not among the results.")
-            return
-        base_test = float(base["test_metric"].iloc[0])
-        print(f"Baseline (batch size {baseline['batch_size']}, hidden dim {baseline['hidden_dim']}, "
-              f"global features '{baseline['global_mode']}', {baseline['gat_num_layers']} GAT layer(s), "
-              f"regressor width {baseline['regressor_hidden_dim']}): test RMSE {base_test:.3f} yards\n")
-    else:
-        print("No final BASELINE given: each study below is read against its OWN local reference point (the "
-              "configuration actually held fixed while that study ran), the same way run_stage's live table "
-              "does -- this works whether or not the search has finished.\n")
-
-    for axis, (col, title, _) in STUDIES.items():
-        sub = study_subset(df, axis, baseline)
-        if len(sub) < 2:
-            print(f"{title}: fewer than two runs, no comparison.")
-            continue
-        best = sub.loc[sub["test_metric"].idxmin()]
-        ref_test = base_test if baseline is not None else sub["test_metric"].min()
-        delta = best["test_metric"] - ref_test
-        tried = ", ".join(disambiguate_labels(sub, axis))
-        source_tag = f" ({best['source']})" if best["dup"] and best["source"] else ""
-        if baseline is not None and best["is_baseline"]:
-            print(f"{title} (tried: {tried}): the baseline is the best configuration.")
-        elif baseline is not None:
-            print(f"{title} (tried: {tried}): best is {config_label(best[col], axis)}{source_tag} with test RMSE "
-                  f"{best['test_metric']:.3f} yards ({delta:+.3f} vs baseline, {100 * delta / base_test:+.1f}%).")
-        else:
-            print(f"{title} (tried: {tried}): best is {config_label(best[col], axis)}{source_tag} with test RMSE "
-                  f"{best['test_metric']:.3f} yards.")
-
-
 # ---------------------------------------------------------------- Bar charts and learning curves
 def plot_ablations(results, baseline=None, suptitle=None):
-    """One panel per study: validation and test RMSE of every configuration in it. With an explicit `baseline`,
-    that exact run is outlined in every panel it belongs to. With `baseline=None`, a run is outlined instead if its
-    run_label recurs across more than one panel -- i.e. it's the point a later stage carried forward from an
-    earlier one, the closest thing to "the baseline" when no single final configuration has been fixed yet.
-    Panels share the y axis, so the size of the effects is comparable."""
+    """One panel per study: validation and test RMSE of every configuration in it. The best configuration of each
+    panel -- the same one `summary_table`/`show_summary_table` bolds, `sub["test_metric"].idxmin()` -- is drawn
+    in a darker shade of the same color, instead of being singled out with a separate outline; there's no
+    baseline marker any more. "Best" is a property of each panel on its own: with an explicit `baseline` that
+    happens not to be the best of a given panel (e.g. Chapter 12's checks, which retrain the Chapter 9
+    starting-point configuration rather than the tuned `BASELINE`), it's that panel's actual best bar that's
+    darkened, not the baseline's. Panels share the y axis, so the size of the effects is comparable."""
     df = results_frame(results, baseline)
     axes_present = [(a, study_subset(df, a, baseline)) for a in STUDIES]
-
-    if baseline is None:
-        # Count how many DIFFERENT studies (axes) a run_label appears in -- not how many rows, which would double
-        # count a label that is merely duplicated (two sessions, same config) within a single study.
-        label_axes = {}
-        for a, sub in axes_present:
-            for lbl in set(sub.get("run_label", [])):
-                label_axes.setdefault(lbl, set()).add(a)
-        outline = lambda r: len(label_axes.get(r["run_label"], ())) > 1
-    else:
-        outline = lambda r: bool(r["is_baseline"])
 
     # A grid (at most 3 per row) instead of one ever-wider row: with 6 studies, a single row of 6 panels squeezes
     # each one down to where labels and value annotations start to overlap. Unused slots in the last row are hidden.
@@ -365,16 +329,18 @@ def plot_ablations(results, baseline=None, suptitle=None):
         labels = disambiguate_labels(sub, axis)
         x = np.arange(len(sub))
         w = 0.38
-        ax.bar(x - w / 2, sub["best_val_metric"], w, color=VAL_COLOR, label="Validation")
-        ax.bar(x + w / 2, sub["test_metric"], w, color=TEST_COLOR, label="Test")
+        # The same "best" the table/its bold test-RMSE column uses: lowest test_metric in THIS panel's subset --
+        # not tied to `is_baseline`, so an explicit `baseline` that isn't actually the best of a given study (e.g.
+        # 12.1/12.2's gl=1 baseline vs. a gl=2/3 point in the GAT-layers panel) is no longer misleadingly marked.
+        best_pos = int(np.argmin(sub["test_metric"].values))
+        val_colors = [VAL_COLOR_BEST if i == best_pos else VAL_COLOR for i in range(len(sub))]
+        test_colors = [TEST_COLOR_BEST if i == best_pos else TEST_COLOR for i in range(len(sub))]
+        ax.bar(x - w / 2, sub["best_val_metric"], w, color=val_colors, label="Validation")
+        ax.bar(x + w / 2, sub["test_metric"], w, color=test_colors, label="Test")
         for xi, v in zip(x, sub["best_val_metric"]):
             ax.text(xi - w / 2, v, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
         for xi, v in zip(x, sub["test_metric"]):
             ax.text(xi + w / 2, v, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
-        for xi, (_, r) in zip(x, sub.iterrows()):
-            if outline(r):
-                ax.add_patch(plt.Rectangle((xi - 0.5, 0), 1, 1, transform=ax.get_xaxis_transform(), fill=False,
-                                           edgecolor=BASELINE_COLOR, linestyle="--", linewidth=1.2, zorder=0))
         ax.set_xticks(x)
         ax.set_xticklabels(labels, rotation=12 if any(len(l) > 6 for l in labels) else 0, ha="right", fontsize=8.5)
         ax.set_xlabel(xlabel)
@@ -392,11 +358,12 @@ def plot_ablations(results, baseline=None, suptitle=None):
             ax.tick_params(axis="y", labelleft=False)
     axes[0].set_ylim(max(0, lo - pad), hi + pad)
     handles, labels_ = axes[0].get_legend_handles_labels()
-    handles.append(plt.Rectangle((0, 0), 1, 1, fill=False, edgecolor=BASELINE_COLOR, linestyle="--"))
-    labels_.append("Baseline" if baseline is not None else "Carried over from another study")
-    fig.legend(handles, labels_, loc="lower center", ncol=3, frameon=False)
-    fig.suptitle(suptitle or "Effect of each factor on the RMSE (yards)"
-                 + ("" if baseline is not None else " -- read at each study's own point in the search"))
+    handles += [plt.Rectangle((0, 0), 1, 1, color=VAL_COLOR_BEST), plt.Rectangle((0, 0), 1, 1, color=TEST_COLOR_BEST)]
+    labels_ += ["Validation (best)", "Test (best)"]
+    fig.legend(handles, labels_, loc="lower center", ncol=4, frameon=False)
+    fig.suptitle(suptitle or "Effect of each factor on the RMSE (yards) -- darker bars mark each panel's best "
+                             "(lowest test RMSE)"
+                 + ("" if baseline is not None else "; read at each study's own point in the search"))
     fig.tight_layout(rect=(0, 0.07, 1, 0.95))
     plt.show()
 
