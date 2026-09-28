@@ -151,6 +151,7 @@ def visualize_comparison(input_batch, input_mask, target_batch, pred_batch, outp
 
     for n in range(complete_prepass.shape[0]):
         ax.plot(complete_prepass[n, :, 1].cpu().numpy(), complete_prepass[n, :, 0].cpu().numpy(),
+                print(get_player_color_by_side(side[n % num_players]), side[n % num_players])
                 color= get_player_color_by_side(side[n % num_players]), alpha= alpha_prepass, linewidth=2)
 
     # POST-PASS REPRESENTATION
