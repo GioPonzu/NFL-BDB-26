@@ -132,7 +132,7 @@ def visualize_comparison(input_batch, input_mask, target_batch, pred_batch, outp
 
     # PRE-PASS REPRESENTATION
     prepass = input_batch[batch_idx, :, :2]
-    side = input_batch[batch_idx, :, 22:24]
+    side = input_batch[batch_idx, :, 18:20]
     mask = input_mask[batch_idx]
 
     num_players = int(mask[0].sum())
