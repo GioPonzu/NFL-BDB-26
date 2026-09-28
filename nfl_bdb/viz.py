@@ -209,7 +209,7 @@ def visualize_comparison(input_batch, input_mask, target_batch, pred_batch, outp
         Line2D([0], [0], color=offense_color, lw=2, alpha=alpha_prepass, label='Pre-pass (observed)'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', label='Ball landing'),
     ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=8)
+    #ax.legend(handles=legend_elements, loc='upper right', fontsize=8)
 
     plt.tight_layout()
     plt.show()
