@@ -367,5 +367,5 @@ def run_stage(runner, baseline, axis, grid, verbose=False):
         axis: r[axis], "val RMSE": r["best_val_metric"], "test RMSE": r["test_metric"],
         "epochs": r["actual_epochs"], "minutes": r["elapsed_min"],
     } for r in results])
-    print(table.to_string(index=False))
-    return table
+    #print(table.to_string(index=False))
+    return table.set_index(axis)
