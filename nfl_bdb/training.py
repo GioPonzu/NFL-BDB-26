@@ -339,7 +339,7 @@ class ExperimentRunner:
         res["batch_size"] = batch_size
         res["global_mode"] = global_mode
         # Sampled pool size for this run (N_TRAIN+N_VAL+N_TEST) -- almost always the standard 5000 (Chapter 10's
-        # whole sequential search used it), but Chapter 12's split-size checks run this same method against a
+        # whole sequential search used it), but 10.6's split-size checks run this same method against a
         # `cfg` with bigger counts, and this is what lets nfl_bdb.results tell those runs apart from a repeat of
         # an existing hyperparameter config: see nfl_bdb.results.STUDIES / DEFAULT_N_TOTAL.
         res["n_total"] = self.cfg.N_TOTAL

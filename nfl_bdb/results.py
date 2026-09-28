@@ -38,8 +38,8 @@ import torch
 # the OTHER columns (all of STUDIES except the one axis in question) regardless of dict order, so it isn't
 # affected by this ordering, and it isn't affected by adding a new axis either.
 #
-# "n_total" is NOT a stage of Chapter 10's sequential search -- it's Chapter 12's sampled-pool-size checks
-# (12.1/12.2), which retrain one fixed configuration on bigger data instead of varying a model hyperparameter.
+# "n_total" is NOT a stage of Chapter 10's sequential search -- it's 10.6's sampled-pool-size checks, which
+# retrain the final configuration on bigger data instead of varying a model hyperparameter.
 # It is tracked here as a sixth axis anyway, for one specific reason: without it, those checks are otherwise
 # indistinguishable, on every OTHER axis, from the pre-tuning starting-point configuration already in the table
 # (batch_size=1, hidden_dim=64, global_mode="all", gat_num_layers=1, regressor_hidden_dim=256) -- so
@@ -132,7 +132,7 @@ def results_frame(results, baseline=None):
         if not df[col].isna().any():
             df[col] = df[col].astype(int)
 
-    # "n_total" (sampled pool size) only exists on runs saved after Chapter 12's split-size checks were added --
+    # "n_total" (sampled pool size) only exists on runs saved after 10.6's split-size checks were added --
     # every run before that (the whole Chapter 10 sequential search) trained on N_TRAIN+N_VAL+N_TEST=5000, so
     # that's the correct backfill, not NaN or the baseline dict (which doesn't carry this field).
     if "n_total" not in df.columns:
@@ -149,7 +149,7 @@ def results_frame(results, baseline=None):
             & (df["global_mode"] == baseline["global_mode"])
             & (df["gat_num_layers"] == baseline["gat_num_layers"])
             & (df["regressor_hidden_dim"] == baseline["regressor_hidden_dim"])
-            # BASELINE (the hyperparameter dict) doesn't carry a pool-size field, since it predates Chapter 12 --
+            # BASELINE (the hyperparameter dict) doesn't carry a pool-size field --
             # default it to DEFAULT_N_TOTAL so "the baseline run" still means the one true final model (trained
             # at the standard 5k pool), not also any future rerun of it at a bigger sampled pool.
             & (df["n_total"] == baseline.get("n_total", DEFAULT_N_TOTAL))
@@ -296,9 +296,8 @@ def plot_ablations(results, baseline=None, suptitle=None):
     panel -- the same one `summary_table`/`show_summary_table` bolds, `sub["test_metric"].idxmin()` -- is drawn
     in a darker shade of the same color, instead of being singled out with a separate outline; there's no
     baseline marker any more. "Best" is a property of each panel on its own: with an explicit `baseline` that
-    happens not to be the best of a given panel (e.g. Chapter 12's checks, which retrain the Chapter 9
-    starting-point configuration rather than the tuned `BASELINE`), it's that panel's actual best bar that's
-    darkened, not the baseline's. Panels share the y axis, so the size of the effects is comparable."""
+    happens not to be the best of a given panel, it's that panel's actual best bar that's darkened, not the
+    baseline's. Panels share the y axis, so the size of the effects is comparable."""
     df = results_frame(results, baseline)
     axes_present = [(a, study_subset(df, a, baseline)) for a in STUDIES]
 
@@ -330,8 +329,8 @@ def plot_ablations(results, baseline=None, suptitle=None):
         x = np.arange(len(sub))
         w = 0.38
         # The same "best" the table/its bold test-RMSE column uses: lowest test_metric in THIS panel's subset --
-        # not tied to `is_baseline`, so an explicit `baseline` that isn't actually the best of a given study (e.g.
-        # 12.1/12.2's gl=1 baseline vs. a gl=2/3 point in the GAT-layers panel) is no longer misleadingly marked.
+        # not tied to `is_baseline`, so an explicit `baseline` that isn't actually the best of a given study is
+        # no longer misleadingly marked.
         best_pos = int(np.argmin(sub["test_metric"].values))
         val_colors = [VAL_COLOR_BEST if i == best_pos else VAL_COLOR for i in range(len(sub))]
         test_colors = [TEST_COLOR_BEST if i == best_pos else TEST_COLOR for i in range(len(sub))]

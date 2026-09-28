@@ -308,7 +308,7 @@ class BatchProvider:
     mode; changing the batch size only re-collates those graphs. Only the graphs of the last mode and the batch lists
     of the last combination are kept in memory: several full sets do not fit in a Colab session.
 
-    Returns `global_in_dim` too, which depends on `global_mode` (0 for "none", different for "no_outcome" vs "all").
+    Returns `global_in_dim` too, which depends on `global_mode` (0 for "none", nonzero for "all").
     """
 
     def __init__(self, data, splits, cfg, preprocess_play_fn, global_features_fn):
