@@ -498,51 +498,7 @@ def global_branch_diagnostics(model, x_global_train, sample_batch, feature_names
     node_norm = node_embed.norm(dim=-1).mean().item()
     global_norm = global_embed.norm(dim=-1).mean().item()
 
-    print(stats.head(top).to_string(index=False))
     print(f"\nmean ||node_embed|| per row:   {node_norm:.4f}")
     print(f"mean ||global_embed|| per row: {global_norm:.4f}")
     print(f"ratio ||global_embed|| / ||node_embed||: {global_norm / node_norm:.4f}")
     return stats
-
-
-# ---------------------------------------------------------------- Error over the prediction horizon
-@torch.no_grad()
-def error_by_horizon(model, gnn_batch_list, device):
-    """RMSE at each output frame separately (frame 0 = the first predicted instant, growing with how far ahead the
-    model is predicting), over every valid (play, player) pair at that frame across `gnn_batch_list`. The aggregate
-    test RMSE (one number for the whole horizon) can't show whether error is flat or compounds with distance into
-    the future; this can. Needs the real model and its batches (like `global_branch_diagnostics`), not
-    `experiment_results.json` alone -- no retraining, just a forward pass over batches already built."""
-    model.eval()
-    se_sum = n_valid = None
-    for gnn_batch in gnn_batch_list:
-        gnn_batch = gnn_batch.to(device)
-        y_true = gnn_batch.y_target            # [B, T, N, 2]
-        output_mask = gnn_batch.y_mask.bool()  # [B, T, N]
-        y_pred = model(gnn_batch)
-
-        se = ((y_pred - y_true) ** 2).sum(dim=-1) * output_mask   # [B, T, N]
-        if se_sum is None:
-            se_sum = torch.zeros(se.shape[1], device=device)
-            n_valid = torch.zeros(se.shape[1], device=device)
-        se_sum += se.sum(dim=(0, 2))
-        n_valid += output_mask.sum(dim=(0, 2))
-
-    rmse = torch.sqrt(se_sum / n_valid.clamp(min=1)).cpu().numpy()
-    return pd.DataFrame({"frame": np.arange(len(rmse)), "rmse": rmse, "n_valid": n_valid.cpu().numpy().astype(int)})
-
-
-def plot_error_by_horizon(df, title="Error vs. Prediction Horizon"):
-    """Plots the table from `error_by_horizon`. Frames with very few valid (play, player) pairs (the tail of the
-    padded horizon, where most plays have already ended) are shown with a lighter marker -- their RMSE is noisier,
-    not necessarily worse."""
-    fig, ax = plt.subplots(figsize=(8, 5))
-    alpha = 0.3 + 0.7 * (df["n_valid"] / df["n_valid"].max())
-    ax.plot(df["frame"], df["rmse"], color=TEST_COLOR, linewidth=1, zorder=1)
-    ax.scatter(df["frame"], df["rmse"], color=TEST_COLOR, alpha=alpha, s=25, zorder=2)
-    ax.set_xlabel("Frame ahead (prediction horizon)")
-    ax.set_ylabel("RMSE (yards)")
-    ax.set_title(title)
-    ax.grid(alpha=0.3)
-    fig.tight_layout()
-    plt.show()
