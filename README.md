@@ -5,7 +5,7 @@ players to predict while the ball is in the air. Each play is a spatio-temporal 
 spatial edges link the `K` nearest players in each frame, temporal edges link a player to himself in the next frame),
 encoded by a TGAT, enriched with global play features and decoded in one shot.
 
-The notebook `nfl_2026_bdb_script_final_complete.ipynb` is the report: it keeps the contributions (ball and global
+The notebook `nfl_bdb_2026_script.ipynb` is the report: it keeps the contributions (ball and global
 features, model, loss, experiments, discussion) and calls this package for everything else, showing its output. Run
 it in Colab (GPU runtime): its first cell clones this repository.
 
@@ -13,7 +13,7 @@ it in Colab (GPU runtime): its first cell clones this repository.
 
 | File | Content | Notebook chapter |
 | --- | --- | --- |
-| `nfl_2026_bdb_script_final_complete.ipynb` | The report | |
+| `nfl_bdb_2026_script.ipynb` | The report | |
 | `nfl_bdb/config.py` | `Config`: every parameter and hyperparameter of the pipeline | 1 |
 | `nfl_bdb/utils.py` | Device and reproducibility (`get_device`, `fix_random`) | 1 |
 | `nfl_bdb/data.py` | Loading, role sanitization, valid-play filter, players table, `get_play`, direction standardization | 2-4 |
